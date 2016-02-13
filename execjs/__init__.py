@@ -22,16 +22,16 @@ from __future__ import unicode_literals, division, with_statement
 3
 '''
 
-import sys
+from subprocess import Popen, PIPE, STDOUT
+import io
+import json
 import os
 import os.path
+import platform
 import re
 import stat
-import io
-import platform
+import sys
 import tempfile
-from subprocess import Popen, PIPE, STDOUT
-import json
 
 import six
 
@@ -41,6 +41,8 @@ try:
     from collections import OrderedDict
 except ImportError:
     from ordereddict import OrderedDict
+
+from . import runtimes_config
 
 __all__ = """
     get register runtimes get_from_environment exec_ eval compile
@@ -198,7 +200,7 @@ class ExternalRuntime:
     def __str__(self):
         return "{class_name}({runtime_name})".format(
             class_name=type(self).__name__,
-            runtime_name=self._name,
+            uuntime_name=self._name,
         )
 
     @property
@@ -341,7 +343,7 @@ def encode_unicode_codepoints(str):
 
 
 class PyV8Runtime:
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         try:
             import PyV8
         except ImportError:
@@ -421,159 +423,18 @@ class PyV8Runtime:
             else:
                 return obj
 
+def _setup_runtimes():
+    __runtimes = OrderedDict()
+    for runtime_name in runtimes_config.runtime_preferred_order:
+        config = runtimes_config.config[runtime_name]
+        clsname = config.get('runtime_type', 'ExternalRuntime')
+        cls = getattr(sys.modules[__name__], clsname)
+        for command_to_try in config['commands_to_try']:
+            r = cls(command=command_to_try, **config['kwargs'])
+            for name in [runtime_name] + config.get('alternate_names', []):
+                __runtimes[name] = r
+            if r.is_available():
+                break
+    return __runtimes
 
-_runtimes = OrderedDict()
-_runtimes['PyV8'] = PyV8Runtime()
-
-for command in ["nodejs", "node"]:
-    _runtimes["Node"] = runtime = ExternalRuntime(
-        name="Node.js (V8)",
-        command=[command],
-        encoding='UTF-8',
-        runner_source=r"""(function(program, execJS) { execJS(program) })(function() { #{source}
-}, function(program) {
-  var output;
-  var print = function(string) {
-    process.stdout.write('' + string + '\n');
-  };
-  try {
-    result = program();
-    print('')
-    if (typeof result == 'undefined' && result !== null) {
-      print('["ok"]');
-    } else {
-      try {
-        print(JSON.stringify(['ok', result]));
-      } catch (err) {
-        print('["err"]');
-      }
-    }
-  } catch (err) {
-    print(JSON.stringify(['err', '' + err]));
-  }
-});""",
-    )
-    if runtime.is_available():
-        break
-
-
-_runtimes['JavaScriptCore'] = ExternalRuntime(
-    name="JavaScriptCore",
-    command=["/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Resources/jsc"],
-    runner_source=r"""(function(program, execJS) { execJS(program) })(function() {
-  return eval(#{encoded_source});
-}, function(program) {
-  var output;
-  try {
-    result = program();
-    print("");
-    if (typeof result == 'undefined' && result !== null) {
-      print('["ok"]');
-    } else {
-      try {
-        print(JSON.stringify(['ok', result]));
-      } catch (err) {
-        print('["err"]');
-      }
-    }
-  } catch (err) {
-    print(JSON.stringify(['err', '' + err]));
-  }
-});
-"""
-)
-
-
-_runtimes['SpiderMonkey'] = _runtimes['Spidermonkey'] = ExternalRuntime(
-    name="SpiderMonkey",
-    command=["js"],
-    runner_source=r"""(function(program, execJS) { execJS(program) })(function() { #{source}
-}, function(program) {
-  #{json2_source}
-  var output;
-  try {
-    result = program();
-    print("");
-    if (typeof result == 'undefined' && result !== null) {
-      print('["ok"]');
-    } else {
-      try {
-        print(JSON.stringify(['ok', result]));
-      } catch (err) {
-        print('["err"]');
-      }
-    }
-  } catch (err) {
-    print(JSON.stringify(['err', '' + err]));
-  }
-});
-""")
-
-
-_runtimes['JScript'] = ExternalRuntime(
-    name="JScript",
-    command=["cscript", "//E:jscript", "//Nologo"],
-    encoding="ascii",
-    runner_source=r"""(function(program, execJS) { execJS(program) })(function() {
-  return eval(#{encoded_source});
-}, function(program) {
-  #{json2_source}
-  var output, print = function(string) {
-    string = string.replace(/[^\x00-\x7f]/g, function(ch){
-      return '\\u' + ('0000' + ch.charCodeAt(0).toString(16)).slice(-4);
-    });
-    WScript.Echo(string);
-  };
-  try {
-    result = program();
-    print("")
-    if (typeof result == 'undefined' && result !== null) {
-      print('["ok"]');
-    } else {
-      try {
-        print(JSON.stringify(['ok', result]));
-      } catch (err) {
-        print('["err"]');
-      }
-    }
-  } catch (err) {
-    print(JSON.stringify(['err', err.name + ': ' + err.message]));
-  }
-});
-"""
-)
-
-
-for _name, _command in [
-    ['PhantomJS', 'phantomjs'],
-    ['SlimerJS', 'slimerjs'],
-]:
-    _runtimes[_name] = ExternalRuntime(
-        name=_name,
-        command=[_command],
-        runner_source=r"""
-(function(program, execJS) { execJS(program) })(function() {
-  return eval(#{encoded_source});
-}, function(program) {
-  var output;
-  var print = function(string) {
-    console.log('' + string);
-  };
-  try {
-    result = program();
-    print('')
-    if (typeof result == 'undefined' && result !== null) {
-      print('["ok"]');
-    } else {
-      try {
-        print(JSON.stringify(['ok', result]));
-      } catch (err) {
-        print('["err"]');
-      }
-    }
-  } catch (err) {
-    print(JSON.stringify(['err', '' + err]));
-  }
-});
-phantom.exit();
-""")
+_runtimes = _setup_runtimes()
