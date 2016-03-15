@@ -10,6 +10,29 @@ import execjs._external_runtime as external_runtime
 import execjs._pyv8runtime as pyv8runtime
 
 
+class RuntimeNames(object):
+    javascriptcore = 'JavaScriptCore'
+    jscript = 'JScript'
+    nashorn = 'Nashorn'
+    node = 'Node'
+    phantomjs = 'PhantomJS'
+    pyv8 = 'PyV8'
+    slimerjs = 'SlimerJS'
+    spidermonkey = 'SpiderMonkey'
+
+
+runtime_preferred_order = [
+    RuntimeNames.pyv8,
+    RuntimeNames.node,
+    RuntimeNames.javascriptcore,
+    RuntimeNames.spidermonkey,
+    RuntimeNames.jscript,
+    RuntimeNames.phantomjs,
+    RuntimeNames.slimerjs,
+    RuntimeNames.nashorn,
+]
+
+
 def register(name, runtime):
     '''Register a JavaScript runtime.'''
     _runtimes[name] = runtime
@@ -71,19 +94,29 @@ def get_from_environment():
     return get(name)
 
 
-_runtimes = OrderedDict()
+def _setup_runtime_map():
+    runtime_map = {
+        RuntimeNames.javascriptcore: external_runtime.jsc,
+        RuntimeNames.jscript: external_runtime.jscript,
+        RuntimeNames.nashorn: external_runtime.nashorn,
+        RuntimeNames.phantomjs: external_runtime.phantomjs,
+        RuntimeNames.pyv8: pyv8runtime.PyV8Runtime(),
+        RuntimeNames.slimerjs: external_runtime.slimerjs,
+    }
+    if external_runtime.node.is_available():
+        runtime_map[RuntimeNames.node] = external_runtime.node
+    else:
+        runtime_map[RuntimeNames.node] = external_runtime.nodejs
 
-register('PyV8', pyv8runtime.PyV8Runtime())
+    return runtime_map
 
-if external_runtime.node.is_available():
-    register("Node", external_runtime.node)
-else:
-    register("Node", external_runtime.nodejs)
 
-register('JavaScriptCore', external_runtime.jsc)
-register('SpiderMonkey', external_runtime.spidermonkey)
-register('Spidermonkey', external_runtime.spidermonkey)
-register('JScript', external_runtime.jscript)
-register("PhantomJS", external_runtime.phantomjs)
-register("SlimerJS", external_runtime.slimerjs)
-register('Nashorn', external_runtime.nashorn)
+def _setup_runtimes(runtime_map):
+    __runtimes = OrderedDict()
+
+    for runtime_name in runtime_preferred_order:
+        __runtimes[runtime_name] = runtime_map[runtime_name]
+
+    return __runtimes
+
+_runtimes = _setup_runtimes(_setup_runtime_map())
