@@ -53,5 +53,5 @@ def main():
         ret = context.eval(sys.stdin.read())
         sys.stdout.write(repr(ret) + "\n")
 
-if "__main__" == __name__:
+if __name__ == '__main__':
     main()

@@ -1,9 +1,10 @@
 import json
 import contextlib
 
-import execjs
 import execjs._abstract_runtime as abstract_runtime
 from execjs._misc import encode_unicode_codepoints
+
+from . import _exceptions
 
 try:
     import PyV8
@@ -59,11 +60,11 @@ class PyV8Runtime(abstract_runtime.AbstructRuntime):
                 try:
                     script = engine.compile(source)
                 except js_errors as e:
-                    raise execjs.RuntimeError(e)
+                    raise _exceptions.RuntimeError(e)
                 try:
                     value = script.run()
                 except js_errors as e:
-                    raise execjs.ProgramError(e)
+                    raise _exceptions.ProgramError(e)
                 return self.convert(value)
 
         def eval(self, source):

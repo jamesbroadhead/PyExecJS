@@ -5,10 +5,10 @@ try:
 except ImportError:
     from ordereddict import OrderedDict
 
-import execjs
 import execjs._external_runtime as external_runtime
 import execjs._pyv8runtime as pyv8runtime
 
+from . import _exceptions
 
 def register(name, runtime):
     '''Register a JavaScript runtime.'''
@@ -26,10 +26,10 @@ def get(name=None):
     try:
         runtime = runtimes()[name]
     except KeyError:
-        raise execjs.RuntimeUnavailable("{name} runtime is not defined".format(name=name))
+        raise _exceptions.RuntimeUnavailableError("{name} runtime is not defined".format(name=name))
     else:
         if not runtime.is_available():
-            raise execjs.RuntimeUnavailable(
+            raise _exceptions.RuntimeUnavailableError(
                 "{name} runtime is not available on this system".format(name=runtime.name))
         return runtime
 
@@ -53,7 +53,7 @@ def _auto_detect():
         if runtime.is_available():
             return runtime
 
-    raise execjs.RuntimeUnavailable("Could not find a JavaScript runtime.")
+    raise _exceptions.RuntimeUnavailableError("Could not find a JavaScript runtime.")
 
 
 def get_from_environment():
